@@ -155,7 +155,7 @@ def run_multiple_inferences(task, n_attempts=5, model="google/gemini-2.0-flash-0
             results['responses'].append(solution)
             
             # Second stage: Extract grid
-            predicted_grid = extract_grid_from_solution(solution, model)
+            predicted_grid = extract_grid_from_solution(solution, model=model)
             
             if predicted_grid is not None:
                 results['predicted_grids'].append(predicted_grid)

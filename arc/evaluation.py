@@ -160,7 +160,8 @@ def evaluate_solution(task, solution_text, model=None):
             # Handle failed grid extraction
             logger.warning(f"Failed to parse grid from solution text for task {task_id}")
             # Log the structure of the solution text to help diagnose issues
-            logger.warning(f"Solution structure: {len(solution_text)} chars, {solution_text.count('\\n')} lines")
+            newline_count = solution_text.count('\n')
+            logger.warning(f"Solution structure: {len(solution_text)} chars, {newline_count} lines")
             # Check for common grid patterns
             contains_brackets = '[[' in solution_text and ']]' in solution_text
             contains_digits = any(c.isdigit() for c in solution_text)
