@@ -3,7 +3,6 @@
 Templates for prompts used in ARC tasks.
 """
 import numpy as np
-import logging
 
 def create_arc_solve_prompt(task):
     """
@@ -51,75 +50,26 @@ def format_grid(grid):
 
 def create_extraction_prompt(solution_text):
     """
-    Create a prompt for grid extraction from model solution.
+    Create prompt for extracting grid from solution text.
     
     Args:
-        solution_text: The solution text from the model
-        
+        solution_text: Model's solution text
+    
     Returns:
-        Prompt string for extraction
+        Extraction prompt string
     """
-    return f"""
-TASK: Extract the numeric grid from the following AI solution to an ARC puzzle.
-Format the grid as a Python nested list, like [[0,1,2],[3,4,5]].
-Only return the grid in proper Python list format, nothing else.
-
-AI SOLUTION:
-{solution_text}
-
-EXTRACTED GRID:
-"""
-
-def direct_grid_extraction(text):
-    """
-    Extract grid using direct parsing techniques.
+    prompt = "# Grid Extraction Task\n\n"
+    prompt += "Below is a solution to an Abstract Reasoning Challenge. Extract only the final output grid from the solution.\n\n"
+    prompt += "## Solution Text\n\n"
+    prompt += solution_text
     
-    Args:
-        text: Text containing grid representation
-        
-    Returns:
-        Numpy array or None if extraction fails
-    """
-    from arc.visualization import parse_grid_from_text
-    import re
-    import numpy as np
+    prompt += "\n\n## Instructions\n\n"
+    prompt += "1. Identify the final output grid in the solution.\n"
+    prompt += "2. Extract ONLY the grid values, maintaining the exact format (spaces between numbers, newlines between rows).\n"
+    prompt += "3. Provide ONLY the grid, with no additional text or explanation.\n\n"
     
-    logger = logging.getLogger('arc.prompts')
-    
-    try:
-        # Try standard parsing first
-        grid = parse_grid_from_text(text)
-        if grid is not None:
-            logger.info("Successfully extracted grid using standard parser")
-            return grid
-            
-        # Try to find arrays in the format [[0,0,0],[1,1,1]]
-        array_pattern = r'\[\s*\[(?:\s*\d+\s*,\s*)*\s*\d+\s*\]\s*(?:,\s*\[\s*(?:\d+\s*,\s*)*\d+\s*\]\s*)*\]'
-        array_matches = re.findall(array_pattern, text)
-        
-        for match in array_matches:
-            try:
-                # Replace single quotes with double quotes for JSON parsing
-                json_str = match.replace("'", '"')
-                import json
-                grid_data = json.loads(json_str)
-                
-                # Validate it's a proper grid (list of lists of same length)
-                if (isinstance(grid_data, list) and 
-                    all(isinstance(row, list) for row in grid_data) and
-                    all(len(row) == len(grid_data[0]) for row in grid_data)):
-                    logger.info("Successfully extracted grid using JSON parsing")
-                    return np.array(grid_data)
-            except Exception as e:
-                logger.debug(f"Failed to parse array match: {e}")
-                continue
-                
-        logger.warning("Direct grid extraction failed - no valid grid found")
-        return None
-        
-    except Exception as e:
-        logger.error(f"Error in direct_grid_extraction: {e}")
-        return None
+    return prompt
+
 
 def extract_grid_from_solution(solution_text, model=None):
     """
@@ -132,37 +82,98 @@ def extract_grid_from_solution(solution_text, model=None):
     Returns:
         Numpy array representing the grid, or None if extraction fails
     """
-    logger = logging.getLogger('arc.prompts')
-    
     try:
-        logger.info("Attempting grid extraction from solution")
-        
         # First try direct extraction using regex or parsing
-        logger.info("Trying direct grid extraction...")
         grid = direct_grid_extraction(solution_text)
         if grid is not None:
             return grid
         
         # If direct extraction fails and a model is provided, try API extraction
         if model is not None:
-            logger.info(f"Direct extraction failed. Trying API extraction with model {model}...")
             from arc.inference import run_api_inference
             
             extraction_prompt = create_extraction_prompt(solution_text)
             extracted_text = run_api_inference(extraction_prompt, model)
-            logger.info(f"API extraction result: {extracted_text[:100]}...")
-            
-            # Try direct extraction again with the API result
-            grid = direct_grid_extraction(extracted_text)
-            if grid is not None:
-                logger.info("Successfully extracted grid using API")
-                return grid
-            
-            logger.warning("API extraction failed to produce a valid grid")
-        else:
-            logger.warning("No model provided for API extraction fallback")
+            return parse_grid_from_text(extracted_text)
         
         return None
     except Exception as e:
-        logger.error(f"Grid extraction failed: {e}", exc_info=True)
-        return None 
+        print(f"Grid extraction failed: {e}")
+        return None
+
+
+def direct_grid_extraction(text):
+    """
+    Try to directly extract a grid from text using pattern matching.
+    
+    Args:
+        text: The text containing grid
+        
+    Returns:
+        Numpy array of the grid or None if extraction fails
+    """
+    import re
+    
+    # Look for grid-like patterns in the text
+    # This is a simplified approach and might need refinement
+    
+    # Strategy 1: Look for a sequence of lines with digits/spaces
+    grid_pattern = r'(\d+(\s+\d+)+\n)+'
+    matches = re.findall(grid_pattern, text)
+    
+    if matches:
+        # Extract the longest match which is likely the grid
+        longest_match = max([m[0] for m in matches], key=len)
+        return parse_grid_from_text(longest_match)
+    
+    # Strategy 2: Look for grid inside markdown code blocks or other common formats
+    grid_in_block = re.search(r'```\n([\d\s]+)\n```', text)
+    if grid_in_block:
+        return parse_grid_from_text(grid_in_block.group(1))
+    
+    # Strategy 3: Find a section that says "output" or "final grid" and extract text after it
+    output_section = re.search(r'(output:|final grid:|solution grid:)(.*?)(\n\n|$)', 
+                               text, re.IGNORECASE | re.DOTALL)
+    if output_section:
+        return parse_grid_from_text(output_section.group(2))
+    
+    # If all else fails, return None
+    return None
+
+
+def parse_grid_from_text(text):
+    """
+    Parse a grid from text representation.
+    
+    Args:
+        text: Text representation of grid
+        
+    Returns:
+        Numpy array of the grid
+    """
+    # Clean the text
+    text = text.strip()
+    
+    # Split into lines and parse each line
+    lines = text.split('\n')
+    grid = []
+    
+    for line in lines:
+        # Skip empty lines
+        if not line.strip():
+            continue
+        
+        # Process line: split by whitespace and convert to integers
+        try:
+            row = [int(cell) for cell in line.split()]
+            if row:  # Only add non-empty rows
+                grid.append(row)
+        except ValueError:
+            # Skip lines that can't be parsed as integers
+            continue
+    
+    # Convert to numpy array if we have a valid grid
+    if grid and all(len(row) == len(grid[0]) for row in grid):
+        return np.array(grid)
+    
+    return None 
