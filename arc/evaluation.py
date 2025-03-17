@@ -106,7 +106,21 @@ def evaluate_solution(task, solution_text):
     if predicted_grid is not None:
         metrics['prediction'] = predicted_grid
         
-        # ... rest of the evaluation code ...
+        # Ground truth for comparison
+        ground_truth = np.array(task['test'][0]['output'])
+        
+        # Compute metrics
+        evaluation_results = evaluate_prediction(ground_truth, predicted_grid)
+        metrics.update(evaluation_results)
+    else:
+        # Handle failed grid extraction
+        metrics.update({
+            'shape_match': False,
+            'accuracy': 0.0,
+            'extraction_failed': True
+        })
+    
+    return metrics
 
 def evaluate_prediction(actual, predicted):
     """
