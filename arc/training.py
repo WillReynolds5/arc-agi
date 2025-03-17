@@ -91,6 +91,7 @@ def train_model(
         bf16=torch.cuda.is_available(),  # Use bfloat16 if available
         report_to="tensorboard",
         save_total_limit=2,  # Keep only the 2 best checkpoints
+        dataset_text_field="text",  # Move this parameter to SFTConfig
     )
     
     # Create SFT Trainer with updated parameters
@@ -99,8 +100,7 @@ def train_model(
         args=training_args,
         train_dataset=processed_dataset,
         peft_config=peft_config,
-        dataset_text_field="text",  # Use the key from format_prompt output
-        processing_class=tokenizer,  # Replace deprecated 'tokenizer' parameter
+        tokenizer=tokenizer,  # Try with tokenizer instead of processing_class
     )
     
     # Start training
