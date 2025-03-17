@@ -8,7 +8,6 @@ import json
 import argparse
 import torch
 from datetime import datetime
-from pathlib import Path
 from tqdm import tqdm
 from datasets import Dataset
 
@@ -17,7 +16,7 @@ from arc.data import load_arc_data, convert_to_chat_messages
 from arc.inference import run_model_inference
 from arc.training import train_model
 from arc.evaluation import evaluate_solution
-from arc.visualization import visualize_task_result, parse_grid_from_text
+from arc.visualization import visualize_task_result
 
 
 def build_dataset_with_model(

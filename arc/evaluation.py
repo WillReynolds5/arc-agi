@@ -117,8 +117,11 @@ def evaluate_solution(task, solution_text):
         logger.info(f"Evaluating solution for task {task.get('id', 'unknown')}")
         logger.debug(f"Solution text:\n{solution_text}")
         
-        # Parse the predicted grid from the solution text
-        predicted_grid = parse_grid_from_text(solution_text)
+        # Use the extract_grid_from_solution method from prompts module instead
+        from arc.prompts import extract_grid_from_solution
+        
+        # Parse the predicted grid from the solution text using the more robust method
+        predicted_grid = extract_grid_from_solution(solution_text)
         
         # Initialize metrics
         metrics = {
