@@ -10,6 +10,16 @@ import torch
 from datetime import datetime
 from tqdm import tqdm
 from datasets import Dataset
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from peft import LoraConfig, TaskType
+
+# For Gemma 3 models
+try:
+    from transformers import Gemma3ForCausalLM
+    GEMMA3_AVAILABLE = True
+except ImportError:
+    GEMMA3_AVAILABLE = False
+    print("Warning: Gemma3ForCausalLM not available. Install with: pip install git+https://github.com/huggingface/transformers@v4.49.0-Gemma-3")
 
 # Import our modules
 from arc.data import load_arc_data, convert_to_chat_messages
@@ -206,12 +216,45 @@ def build_dataset_with_model(
             # Convert to chat messages
             messages = convert_to_chat_messages(task, solution)
             
+            # Check if we need special handling for Gemma-3 models
+            if "gemma-3" in model.__class__.__name__.lower():
+                # Convert the standard messages format to the Gemma-3 format if needed
+                if isinstance(messages, list) and len(messages) > 0 and isinstance(messages[0], dict):
+                    # Format expected by Gemma-3 according to model card
+                    formatted_messages = [
+                        [
+                            {
+                                "role": "system",
+                                "content": [{"type": "text", "text": messages[0]["content"]}]
+                            },
+                            {
+                                "role": "user",
+                                "content": [{"type": "text", "text": messages[1]["content"]}]
+                            }
+                        ]
+                    ]
+                    # Store both formats
+                    example = {
+                        "system": messages[0]["content"],
+                        "user": messages[1]["content"],
+                        "assistant": messages[2]["content"],
+                        "formatted_messages": formatted_messages
+                    }
+                else:
+                    example = {
+                        "system": messages[0]["content"],
+                        "user": messages[1]["content"], 
+                        "assistant": messages[2]["content"]
+                    }
+            else:
+                example = {
+                    "system": messages[0]["content"],
+                    "user": messages[1]["content"],
+                    "assistant": messages[2]["content"]
+                }
+            
             # Add to our collection
-            all_examples.append({
-                "system": messages[0]["content"],
-                "user": messages[1]["content"],
-                "assistant": messages[2]["content"],
-            })
+            all_examples.append(example)
             
             # Prepare filename with metrics
             iou_score = metrics.get('mean_iou', 0)
@@ -307,8 +350,6 @@ def run_iterative_training(
     # Set up PEFT config if requested
     peft_config = None
     if use_peft:
-        from peft import LoraConfig, TaskType
-        
         peft_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
             inference_mode=False,
@@ -330,9 +371,6 @@ def run_iterative_training(
         
         # Load model for inference if not already loaded
         if current_model is None or current_tokenizer is None:
-            from transformers import AutoModelForCausalLM, AutoTokenizer
-            import torch
-            
             print(f"Loading model: {current_model_name}")
             
             # Update the model loading for Gemma-3 models
@@ -340,13 +378,14 @@ def run_iterative_training(
                 print("Loading Gemma-3 model with specialized configuration...")
                 try:
                     # Check that we're using a compatible transformers version
-                    import transformers
-                    print(f"Transformers version: {transformers.__version__}")
+                    if not GEMMA3_AVAILABLE:
+                        raise ImportError("Gemma3ForCausalLM is not available.")
                     
+                    # Load tokenizer first
                     current_tokenizer = AutoTokenizer.from_pretrained(current_model_name)
                     
                     # Configure the model with appropriate settings for Gemma-3
-                    current_model = AutoModelForCausalLM.from_pretrained(
+                    current_model = Gemma3ForCausalLM.from_pretrained(
                         current_model_name,
                         torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
                         device_map="auto"
