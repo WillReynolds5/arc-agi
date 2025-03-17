@@ -3,8 +3,14 @@
 Functions for evaluating model performance on ARC tasks.
 """
 import numpy as np
+import logging
 from typing import Dict, List, Any, Optional, Tuple
 from arc.visualization import parse_grid_from_text
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, 
+                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('arc.evaluation')
 
 def intersection_over_union(y_true, y_pred, class_val):
     """
@@ -26,15 +32,21 @@ def intersection_over_union(y_true, y_pred, class_val):
     intersection = np.logical_and(true_mask, pred_mask).sum()
     union = np.logical_or(true_mask, pred_mask).sum()
     
+    # Log details for debugging
+    logger.debug(f"Class {class_val} - Intersection: {intersection}, Union: {union}")
+    
     # Calculate IoU (handle division by zero)
     if union == 0:
         # If the class doesn't appear in either ground truth or prediction
         if intersection == 0:
+            logger.debug(f"Class {class_val} absent in both ground truth and prediction")
             return 1.0  # Both agree this class is absent
         else:
+            logger.warning(f"Unexpected case: intersection={intersection}, union=0 for class {class_val}")
             return 0.0  # This should not happen mathematically
     
     iou = intersection / union
+    logger.debug(f"Class {class_val} IoU: {iou:.4f}")
     return float(iou)
 
 def mean_iou(actual, predicted):
@@ -50,16 +62,19 @@ def mean_iou(actual, predicted):
     """
     # Check for dimension mismatch and return 0 if dimensions don't match
     if actual.shape != predicted.shape:
+        logger.warning(f"Shape mismatch: actual {actual.shape} vs predicted {predicted.shape}")
         return 0.0
     
     # Get unique values across both grids
     all_values = np.unique(np.concatenate((actual.flatten(), predicted.flatten())))
+    logger.debug(f"Unique values in grids: {all_values}")
     
     # Calculate IoU for each unique value
     iou_scores = []
     for val in all_values:
         # Skip background (0s) for IoU calculation
         if val == 0:
+            logger.debug(f"Skipping background class (0) for IoU calculation")
             continue
             
         # Create binary masks for this value
@@ -73,12 +88,18 @@ def mean_iou(actual, predicted):
         # Calculate IoU for this value
         if union > 0:
             iou = intersection / union
+            logger.debug(f"Class {val} - Intersection: {intersection}, Union: {union}, IoU: {iou:.4f}")
             iou_scores.append(iou)
+        else:
+            logger.debug(f"Class {val} - No elements in union")
     
     # Calculate mean IoU across all values
     if len(iou_scores) > 0:
-        return np.mean(iou_scores)
+        mean = np.mean(iou_scores)
+        logger.info(f"Mean IoU: {mean:.4f} across {len(iou_scores)} classes")
+        return mean
     else:
+        logger.warning("No non-background classes matched. Returning IoU=0")
         return 0.0  # If no non-background values matched
 
 def evaluate_solution(task, solution_text):
@@ -92,35 +113,54 @@ def evaluate_solution(task, solution_text):
     Returns:
         Dict with evaluation metrics
     """
-    # Parse the predicted grid from the solution text
-    predicted_grid = parse_grid_from_text(solution_text)
-    
-    # Initialize metrics
-    metrics = {
-        'exact_match': False,
-        'mean_iou': 0.0,
-        'valid_solution': predicted_grid is not None
-    }
-    
-    # If we have a parsed grid, add it to the metrics
-    if predicted_grid is not None:
-        metrics['prediction'] = predicted_grid
+    try:
+        logger.info(f"Evaluating solution for task {task.get('id', 'unknown')}")
+        logger.debug(f"Solution text:\n{solution_text}")
         
-        # Ground truth for comparison
-        ground_truth = np.array(task['test'][0]['output'])
+        # Parse the predicted grid from the solution text
+        predicted_grid = parse_grid_from_text(solution_text)
         
-        # Compute metrics
-        evaluation_results = evaluate_prediction(ground_truth, predicted_grid)
-        metrics.update(evaluation_results)
-    else:
-        # Handle failed grid extraction
-        metrics.update({
-            'shape_match': False,
-            'accuracy': 0.0,
-            'extraction_failed': True
-        })
-    
-    return metrics
+        # Initialize metrics
+        metrics = {
+            'exact_match': False,
+            'mean_iou': 0.0,
+            'valid_solution': predicted_grid is not None
+        }
+        
+        # If we have a parsed grid, add it to the metrics
+        if predicted_grid is not None:
+            logger.info(f"Successfully parsed grid with shape {predicted_grid.shape}")
+            logger.debug(f"Parsed grid:\n{predicted_grid}")
+            metrics['prediction'] = predicted_grid
+            
+            # Ground truth for comparison
+            ground_truth = np.array(task['test'][0]['output'])
+            logger.debug(f"Ground truth grid shape: {ground_truth.shape}")
+            logger.debug(f"Ground truth grid:\n{ground_truth}")
+            
+            # Compute metrics
+            evaluation_results = evaluate_prediction(ground_truth, predicted_grid)
+            metrics.update(evaluation_results)
+            logger.info(f"Evaluation results: exact_match={metrics['exact_match']}, mean_iou={metrics['mean_iou']:.4f}")
+        else:
+            # Handle failed grid extraction
+            logger.warning("Failed to parse grid from solution text")
+            metrics.update({
+                'shape_match': False,
+                'accuracy': 0.0,
+                'extraction_failed': True
+            })
+        
+        return metrics
+    except Exception as e:
+        # Log the error but return a valid dictionary
+        logger.error(f"Error in evaluate_solution: {e}", exc_info=True)
+        return {
+            'exact_match': False,
+            'mean_iou': 0.0,
+            'valid_solution': False,
+            'error': str(e)
+        }
 
 def evaluate_prediction(actual, predicted):
     """
@@ -136,6 +176,9 @@ def evaluate_prediction(actual, predicted):
     # Check for dimension mismatch
     shape_match = (actual.shape == predicted.shape)
     
+    if not shape_match:
+        logger.warning(f"Shape mismatch: actual {actual.shape} vs predicted {predicted.shape}")
+    
     # If shapes don't match, we can't do exact match
     exact_match = False
     accuracy = 0.0
@@ -145,14 +188,18 @@ def evaluate_prediction(actual, predicted):
     if shape_match:
         # Calculate exact match
         exact_match = np.array_equal(actual, predicted)
+        if exact_match:
+            logger.info("EXACT MATCH! 🎉 Prediction perfectly matches ground truth.")
         
         # Calculate cell-wise accuracy
         total_cells = actual.size
         correct_cells = (actual == predicted).sum()
         accuracy = correct_cells / total_cells
+        logger.info(f"Cell-wise accuracy: {accuracy:.4f} ({correct_cells}/{total_cells} cells correct)")
         
         # Calculate mean IoU
         miou = mean_iou(actual, predicted)
+        logger.info(f"Mean IoU: {miou:.4f}")
     
     return {
         'exact_match': exact_match,
@@ -173,13 +220,19 @@ def analyze_results(results, verbose=True):
         Dictionary of analyzed data
     """
     metrics = results['metrics']
+    task_id = results.get('task_id', 'unknown')
+    
+    logger.info(f"Analyzing results for task {task_id} with {len(metrics)} inference attempts")
     
     # Extract IoU scores and filter out None values
     iou_scores = [m.get('mean_iou', 0.0) for m in metrics if m is not None]
     
+    # Log individual attempt scores
+    for i, score in enumerate(iou_scores):
+        logger.info(f"Attempt {i+1}: IoU = {score:.4f}")
+    
     if not iou_scores:
-        if verbose:
-            print("No valid IoU scores found.")
+        logger.warning("No valid IoU scores found.")
         return {
             'average_iou': 0.0,
             'max_iou': 0.0,
@@ -203,6 +256,13 @@ def analyze_results(results, verbose=True):
     # Calculate success rate (exact matches)
     exact_matches = sum(1 for m in metrics if m.get('exact_match', False))
     success_rate = exact_matches / len(metrics) if metrics else 0
+    
+    logger.info(f"Task {task_id} Results Summary:")
+    logger.info(f"Average IoU Score: {average_iou:.4f}")
+    logger.info(f"Max IoU Score: {max_iou:.4f} (Attempt #{best_attempt_index + 1})")
+    logger.info(f"Min IoU Score: {min_iou:.4f}")
+    logger.info(f"Success Rate (Exact Matches): {success_rate:.2%}")
+    logger.info(f"Attempts Above Average: {len(above_average_indices)}/{len(iou_scores)}")
     
     if verbose:
         print("\nResults Analysis:")

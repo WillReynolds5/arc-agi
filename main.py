@@ -100,10 +100,18 @@ def build_dataset_with_model(
             
             # Evaluate the solution
             metrics = evaluate_solution(task, solution_text)
+            if metrics is None:
+                # Provide a default metrics dict if evaluation returned None
+                metrics = {
+                    'exact_match': False,
+                    'mean_iou': 0.0,
+                    'valid_solution': False,
+                    'error': 'Evaluation returned None'
+                }
             task_results['metrics'].append(metrics)
             
             # Visualize if prediction is available
-            if 'prediction' in metrics:
+            if metrics is not None and 'prediction' in metrics:
                 # Create visualization directory
                 viz_dir = os.path.join(iter_output_dir, "visualizations")
                 os.makedirs(viz_dir, exist_ok=True)
