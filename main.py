@@ -15,7 +15,7 @@ from datasets import Dataset
 from arc.data import load_arc_data, convert_to_chat_messages
 from arc.inference import run_model_inference
 from arc.training import train_model
-from arc.evaluation import evaluate_solution
+from arc.evaluation import evaluate_solution, configure_logging
 from arc.visualization import visualize_task_result
 
 
@@ -94,7 +94,17 @@ def build_dataset_with_model(
         # Run multiple attempts for this task
         for attempt in range(attempts_per_task):
             # Run model inference
+            print(f"\nInference attempt {attempt+1} for task {task_id}")
+            print(f"Task has {len(task['train'])} training examples")
+
             solution_text = run_model_inference(task, model, tokenizer)
+
+            if not solution_text:
+                print("Warning: Empty solution text returned!")
+            else:
+                print(f"Got solution with {len(solution_text)} characters")
+                print(f"Preview: {solution_text[:100]}...")
+
             task_results['responses'].append(solution_text)
             
             # Evaluate the solution
@@ -321,17 +331,48 @@ def run_iterative_training(
         # Load model for inference if not already loaded
         if current_model is None or current_tokenizer is None:
             from transformers import AutoModelForCausalLM, AutoTokenizer
+            import torch
             
             print(f"Loading model: {current_model_name}")
-            current_model = AutoModelForCausalLM.from_pretrained(
-                current_model_name,
-                torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-                device_map="auto"
-            )
             
-            current_tokenizer = AutoTokenizer.from_pretrained(current_model_name)
-            if current_tokenizer.pad_token is None:
-                current_tokenizer.pad_token = current_tokenizer.eos_token
+            # Update the model loading for Gemma-3 models
+            if "gemma-3" in current_model_name.lower():
+                print("Loading Gemma-3 model with specialized configuration...")
+                try:
+                    # Check that we're using a compatible transformers version
+                    import transformers
+                    print(f"Transformers version: {transformers.__version__}")
+                    
+                    current_tokenizer = AutoTokenizer.from_pretrained(current_model_name)
+                    
+                    # Configure the model with appropriate settings for Gemma-3
+                    current_model = AutoModelForCausalLM.from_pretrained(
+                        current_model_name,
+                        torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+                        device_map="auto"
+                    )
+                    
+                    # Ensure we have the proper tokenizer settings
+                    if current_tokenizer.pad_token is None:
+                        current_tokenizer.pad_token = current_tokenizer.eos_token
+                        
+                    print("Gemma-3 model loaded successfully")
+                except Exception as e:
+                    print(f"Error loading Gemma-3 model: {e}")
+                    print("Make sure you're using the correct version of Transformers. For Gemma-3, install:")
+                    print("pip install git+https://github.com/huggingface/transformers@v4.49.0-Gemma-3")
+                    raise
+            else:
+                # Standard loading for other models
+                current_model = AutoModelForCausalLM.from_pretrained(
+                    current_model_name,
+                    torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+                    device_map="auto"
+                )
+                
+                current_tokenizer = AutoTokenizer.from_pretrained(current_model_name)
+                if current_tokenizer.pad_token is None:
+                    current_tokenizer.pad_token = current_tokenizer.eos_token
         
         # Build dataset with current model
         print(f"Building dataset with model: {current_model_name}")
@@ -411,9 +452,16 @@ def main():
                        help='Learning rate for training')
     parser.add_argument('--epochs', type=int, default=3, 
                        help='Number of epochs per training iteration')
+    parser.add_argument('--logging_level', default='INFO', 
+                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                       help='Set the logging level')
     
     args = parser.parse_args()
     
+    # Configure logging
+    configure_logging(args.logging_level)
+    
+    # Run iterative training
     run_iterative_training(
         initial_model_name=args.initial_model,
         data_path=args.data_path,
