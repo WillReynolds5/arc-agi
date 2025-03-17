@@ -37,4 +37,4 @@ add token with hf_ and then this BsZuzRxQbbnSJXlDXblIYuPayYgpIxRDhV''
 
 to run:
 
-python main.py   --initial_model "google/gemma-3-4b-it"   --data_path "data"   --output_dir "arc_h100_test"   --iterations 1   --attempts 3   --min_iou 0.7   --limit 10   --use_peft   --learning_rate 2e-5   --epochs 3
+python main.py   --initial_model "google/gemma-3-4b-it"   --data_path "data"   --output_dir "arc_h100_test"   --iterations 1   --attempts 3   --min_iou 0.1   --limit 10   --use_peft   --learning_rate 2e-5   --epochs 3

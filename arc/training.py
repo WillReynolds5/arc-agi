@@ -60,6 +60,11 @@ def train_model(
     model_output_dir = os.path.join(output_dir, f"{os.path.basename(model_name)}_{timestamp}")
     os.makedirs(model_output_dir, exist_ok=True)
     
+    # Check if we have any training examples
+    if len(training_data) == 0:
+        print("No training examples available. Skipping training.")
+        return model_name  # Return the original model name
+    
     # Process dataset to create formatted examples
     processed_dataset = training_data.map(format_prompt)
     

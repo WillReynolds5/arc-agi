@@ -1,187 +1,200 @@
 #!/usr/bin/env python
 """
-Functions for visualizing ARC tasks and solutions.
+Functions for visualizing ARC task data and results.
 """
-import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec
+import os
+import json
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+from typing import Dict, List, Optional, Any, Tuple
 
+# Define the color map for ARC grids (10 colors)
+ARC_COLORS = [
+    "#000000", "#0074D9", "#FF4136", "#2ECC40", "#FFDC00",
+    "#AAAAAA", "#F012BE", "#FF851B", "#7FDBFF", "#870C25"
+]
 
-def visualize_all_in_one(task, predicted_grid=None, task_id=None):
+def visualize_task_result(
+    task: Dict, 
+    prediction_output: Optional[np.ndarray] = None, 
+    save_path: Optional[str] = None,
+    show_plot: bool = True
+) -> None:
     """
-    Visualize all inputs and outputs in a single figure.
+    Visualize ARC task with input, expected output, and prediction.
     
     Args:
-        task: ARC task dictionary with 'train' and 'test' examples
-        predicted_grid: Predicted output grid (optional)
-        task_id: Optional task ID to display
+        task: ARC task dict with train, test pairs
+        prediction_output: Optional prediction grid (if available)
+        save_path: Path to save the visualization
+        show_plot: Whether to display the plot
     """
-    n_train = len(task['train'])
+    # Determine how many rows and columns we need
+    num_train = len(task['train'])
+    num_test = len(task['test'])
+    num_rows = max(num_train, num_test) 
     
-    # Calculate grid size - we need a slot for each train input/output pair,
-    # plus the test input and predicted output
-    total_items = n_train * 2 + 2  # train pairs + test input + (prediction or true output)
-    if predicted_grid is not None:
-        total_items += 1  # Add one more for ground truth if we have a prediction
+    # Create a larger figure with a grid layout
+    fig, axes = plt.subplots(
+        nrows=num_rows, 
+        ncols=3 if prediction_output is not None else 2,
+        figsize=(15, 5 * num_rows)
+    )
     
-    # Find a reasonable grid layout
-    cols = min(4, total_items)
-    rows = (total_items + cols - 1) // cols
+    cmap = ListedColormap(ARC_COLORS)
     
-    # Create figure
-    fig = plt.figure(figsize=(cols * 3, rows * 3))
-    title = f"ARC Task {task_id}" if task_id else "ARC Task"
-    fig.suptitle(title, fontsize=16)
+    # If there's only one row, we need to adjust the axes shape
+    if num_rows == 1:
+        axes = axes.reshape(1, -1)
     
-    gs = GridSpec(rows, cols, figure=fig)
+    # Fill in empty spots in the grid with invisible subplots
+    for i in range(num_rows):
+        for j in range(3 if prediction_output is not None else 2):
+            if i >= num_train and j == 0:  # Empty training input
+                axes[i, j].axis('off')
+            elif i >= num_test and j >= 1:  # Empty test output or prediction
+                axes[i, j].axis('off')
     
     # Plot training examples
-    item_count = 0
-    for i in range(n_train):
-        # Plot input
-        ax1 = fig.add_subplot(gs[item_count // cols, item_count % cols])
-        ax1.imshow(task['train'][i]['input'], cmap='viridis', aspect='equal')  # Force square cells
-        ax1.set_title(f"Train {i+1} Input")
-        ax1.axis('off')
-        item_count += 1
-        
-        # Plot output
-        ax2 = fig.add_subplot(gs[item_count // cols, item_count % cols])
-        ax2.imshow(task['train'][i]['output'], cmap='viridis', aspect='equal')  # Force square cells
-        ax2.set_title(f"Train {i+1} Output")
-        ax2.axis('off')
-        item_count += 1
+    for i, example in enumerate(task['train']):
+        if i < num_rows:
+            # Plot input grid
+            ax = axes[i, 0]
+            im = ax.imshow(example['input'], cmap=cmap, vmin=0, vmax=9)
+            ax.set_title(f"Train Input {i+1}")
+            ax.set_xticks(np.arange(len(example['input'][0])))
+            ax.set_yticks(np.arange(len(example['input'])))
+            ax.grid(color='white', linestyle='-', linewidth=1.5)
+            
+            # Add grid values as text
+            for y in range(len(example['input'])):
+                for x in range(len(example['input'][0])):
+                    ax.text(x, y, str(example['input'][y][x]), 
+                           ha="center", va="center", color="w", fontweight="bold")
+            
+            # Plot output grid
+            ax = axes[i, 1]
+            im = ax.imshow(example['output'], cmap=cmap, vmin=0, vmax=9)
+            ax.set_title(f"Train Output {i+1}")
+            ax.set_xticks(np.arange(len(example['output'][0])))
+            ax.set_yticks(np.arange(len(example['output'])))
+            ax.grid(color='white', linestyle='-', linewidth=1.5)
+            
+            # Add grid values as text
+            for y in range(len(example['output'])):
+                for x in range(len(example['output'][0])):
+                    ax.text(x, y, str(example['output'][y][x]), 
+                           ha="center", va="center", color="w", fontweight="bold")
     
-    # Plot test input
-    ax_test = fig.add_subplot(gs[item_count // cols, item_count % cols])
-    ax_test.imshow(task['test'][0]['input'], cmap='viridis', aspect='equal')  # Force square cells
-    ax_test.set_title("Test Input")
-    ax_test.axis('off')
-    item_count += 1
-    
-    # Plot predicted output if available
-    if predicted_grid is not None:
-        ax_pred = fig.add_subplot(gs[item_count // cols, item_count % cols])
-        ax_pred.imshow(predicted_grid, cmap='viridis', aspect='equal')  # Force square cells
-        ax_pred.set_title("Predicted Output")
-        ax_pred.axis('off')
-        item_count += 1
-        
-        # Plot ground truth
-        ax_true = fig.add_subplot(gs[item_count // cols, item_count % cols])
-        ax_true.imshow(task['test'][0]['output'], cmap='viridis', aspect='equal')  # Force square cells
-        ax_true.set_title("Ground Truth")
-        ax_true.axis('off')
-    else:
-        # Just show ground truth if no prediction
-        ax_true = fig.add_subplot(gs[item_count // cols, item_count % cols])
-        ax_true.imshow(task['test'][0]['output'], cmap='viridis', aspect='equal')  # Force square cells
-        ax_true.set_title("Test Output (Ground Truth)")
-        ax_true.axis('off')
+    # Plot test examples
+    for i, example in enumerate(task['test']):
+        if i < num_rows:
+            # Plot input grid
+            ax = axes[i, 0]
+            if i >= num_train:  # Only set if not already set by training examples
+                im = ax.imshow(example['input'], cmap=cmap, vmin=0, vmax=9)
+                ax.set_title(f"Test Input {i+1}")
+                ax.set_xticks(np.arange(len(example['input'][0])))
+                ax.set_yticks(np.arange(len(example['input'])))
+                ax.grid(color='white', linestyle='-', linewidth=1.5)
+                
+                # Add grid values as text
+                for y in range(len(example['input'])):
+                    for x in range(len(example['input'][0])):
+                        ax.text(x, y, str(example['input'][y][x]), 
+                               ha="center", va="center", color="w", fontweight="bold")
+            
+            # Plot expected output grid
+            ax = axes[i, 1]
+            im = ax.imshow(example['output'], cmap=cmap, vmin=0, vmax=9)
+            ax.set_title(f"Expected Output {i+1}")
+            ax.set_xticks(np.arange(len(example['output'][0])))
+            ax.set_yticks(np.arange(len(example['output'])))
+            ax.grid(color='white', linestyle='-', linewidth=1.5)
+            
+            # Add grid values as text
+            for y in range(len(example['output'])):
+                for x in range(len(example['output'][0])):
+                    ax.text(x, y, str(example['output'][y][x]), 
+                           ha="center", va="center", color="w", fontweight="bold")
+            
+            # Plot prediction if provided
+            if prediction_output is not None:
+                ax = axes[i, 2]
+                
+                # Only plot prediction for the first test example
+                if i == 0:
+                    im = ax.imshow(prediction_output, cmap=cmap, vmin=0, vmax=9)
+                    ax.set_title(f"Prediction")
+                    ax.set_xticks(np.arange(len(prediction_output[0])))
+                    ax.set_yticks(np.arange(len(prediction_output)))
+                    ax.grid(color='white', linestyle='-', linewidth=1.5)
+                    
+                    # Add grid values as text
+                    for y in range(len(prediction_output)):
+                        for x in range(len(prediction_output[0])):
+                            ax.text(x, y, str(prediction_output[y][x]), 
+                                   ha="center", va="center", color="w", fontweight="bold")
     
     plt.tight_layout()
-    fig.subplots_adjust(top=0.9)  # Adjust for the suptitle
-    plt.show()
     
-    return fig
+    # Save the visualization if requested
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Visualization saved to {save_path}")
+    
+    # Show the plot if requested
+    if show_plot:
+        plt.show()
+    else:
+        plt.close(fig)
 
-
-def visualize_multiple_attempts(task, predicted_grids, metrics, task_id=None, max_attempts_to_show=10):
+def parse_grid_from_text(text: str) -> Optional[np.ndarray]:
     """
-    Visualize multiple inference attempts in a single figure along with their metrics.
+    Parse a grid from text representation.
     
     Args:
-        task: ARC task dictionary with 'train' and 'test' examples
-        predicted_grids: List of predicted output grids
-        metrics: List of metric dictionaries corresponding to each prediction
-        task_id: Optional task ID to display
-        max_attempts_to_show: Maximum number of attempts to display (to avoid overcrowding)
+        text: Text containing a grid representation
+        
+    Returns:
+        Numpy array of grid or None if parsing fails
     """
-    # Filter out None predictions
-    valid_attempts = [(i, grid, m) for i, (grid, m) in enumerate(zip(predicted_grids, metrics)) 
-                     if grid is not None]
-    
-    if not valid_attempts:
-        print("No valid predictions to visualize.")
-        return
-    
-    # Limit the number of attempts to show to avoid overcrowding
-    if len(valid_attempts) > max_attempts_to_show:
-        # Sort by IoU score and take the top max_attempts_to_show
-        valid_attempts = sorted(valid_attempts, key=lambda x: x[2].get('mean_iou', 0), reverse=True)[:max_attempts_to_show]
-        print(f"Showing only the top {max_attempts_to_show} attempts based on IoU score.")
-    
-    n_train = len(task['train'])
-    n_attempts = len(valid_attempts)
-    
-    # Calculate grid layout
-    # First row: training examples (input-output pairs side by side)
-    # Second row: test input and ground truth
-    # Remaining rows: predictions (3 per row)
-    
-    # Determine how many columns we need for training examples
-    train_cols = n_train * 2  # Each training example has input and output
-    
-    # For predictions, arrange in rows of 3
-    pred_rows = (n_attempts + 2) // 3  # +2 for test input and ground truth
-    pred_cols = min(3, n_attempts + 2)
-    
-    # Total rows needed
-    total_rows = 2 + pred_rows  # 1 for training, 1 for test+truth, and pred_rows for predictions
-    
-    # Determine overall column count (max of training columns and prediction columns)
-    total_cols = max(train_cols, pred_cols)
-    
-    # Create figure with flexible height based on number of rows
-    fig = plt.figure(figsize=(total_cols * 3, total_rows * 3))
-    title = f"ARC Task {task_id} - Multiple Inference Attempts" if task_id else "ARC Task - Multiple Inference Attempts"
-    fig.suptitle(title, fontsize=16)
-    
-    gs = GridSpec(total_rows, total_cols, figure=fig)
-    
-    # Plot training examples (first row)
-    for i in range(n_train):
-        # Plot input
-        ax_in = fig.add_subplot(gs[0, i*2])
-        ax_in.imshow(task['train'][i]['input'], cmap='viridis', aspect='equal')  # Force square cells
-        ax_in.set_title(f"Train {i+1} Input")
-        ax_in.axis('off')
+    try:
+        # Look for grid-like patterns in the text
+        lines = text.strip().split('\n')
+        grid_lines = []
         
-        # Plot output
-        ax_out = fig.add_subplot(gs[0, i*2+1])
-        ax_out.imshow(task['train'][i]['output'], cmap='viridis', aspect='equal')  # Force square cells
-        ax_out.set_title(f"Train {i+1} Output")
-        ax_out.axis('off')
-    
-    # Plot test input and ground truth (second row)
-    ax_test = fig.add_subplot(gs[1, 0])
-    ax_test.imshow(task['test'][0]['input'], cmap='viridis', aspect='equal')  # Force square cells
-    ax_test.set_title("Test Input")
-    ax_test.axis('off')
-    
-    ax_truth = fig.add_subplot(gs[1, 1])
-    ground_truth = np.array(task['test'][0]['output'])
-    ax_truth.imshow(ground_truth, cmap='viridis', aspect='equal')  # Force square cells
-    ax_truth.set_title("Ground Truth")
-    ax_truth.axis('off')
-    
-    # Plot predictions (remaining rows)
-    for idx, (attempt_idx, grid, metric) in enumerate(valid_attempts):
-        row = 2 + (idx // 3)
-        col = idx % 3
+        # Find contiguous lines that look like grids
+        current_grid = []
+        for line in lines:
+            # Clean up the line and check if it looks like a grid row
+            clean_line = line.strip()
+            if clean_line and all(c.isdigit() or c in '[] ,' for c in clean_line):
+                # Extract just the digits
+                digits = [int(c) for c in clean_line if c.isdigit()]
+                if digits:
+                    current_grid.append(digits)
+            elif current_grid:
+                # End of a grid section
+                if len(current_grid) > 0:
+                    grid_lines.append(current_grid)
+                current_grid = []
         
-        ax = fig.add_subplot(gs[row, col])
-        ax.imshow(grid, cmap='viridis', aspect='equal')  # Force square cells
+        # Add the last grid if it exists
+        if current_grid:
+            grid_lines.append(current_grid)
         
-        # Format metrics for the title
-        iou = metric.get('mean_iou', 0)
-        exact = '✓' if metric.get('exact_match', False) else '✗'
-        
-        ax.set_title(f"Attempt #{attempt_idx+1}: IoU={iou:.3f} {exact}")
-        ax.axis('off')
+        # Use the largest grid found
+        if grid_lines:
+            largest_grid = max(grid_lines, key=lambda g: len(g) * len(g[0]) if g and g[0] else 0)
+            
+            # Check if all rows have the same length
+            if all(len(row) == len(largest_grid[0]) for row in largest_grid):
+                return np.array(largest_grid)
     
-    plt.tight_layout()
-    fig.subplots_adjust(top=0.95)  # Adjust for the suptitle
-    plt.show()
+    except Exception as e:
+        print(f"Error parsing grid: {e}")
     
-    return fig 
+    return None

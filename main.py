@@ -17,6 +17,7 @@ from arc.data import load_arc_data, convert_to_chat_messages
 from arc.inference import run_model_inference
 from arc.training import train_model
 from arc.evaluation import evaluate_solution
+from arc.visualization import visualize_task_result, parse_grid_from_text
 
 
 def build_dataset_with_model(
@@ -100,6 +101,26 @@ def build_dataset_with_model(
             # Evaluate the solution
             metrics = evaluate_solution(task, solution_text)
             task_results['metrics'].append(metrics)
+            
+            # Visualize if prediction is available
+            if 'prediction' in metrics:
+                # Create visualization directory
+                viz_dir = os.path.join(iter_output_dir, "visualizations")
+                os.makedirs(viz_dir, exist_ok=True)
+                
+                # Generate filename
+                iou_score = metrics.get('mean_iou', 0)
+                exact_match = "exact" if metrics.get('exact_match', False) else "partial"
+                viz_filename = f"{task_id}_attempt{attempt}_{exact_match}_iou{iou_score:.4f}.png"
+                viz_path = os.path.join(viz_dir, viz_filename)
+                
+                # Create and save visualization
+                visualize_task_result(
+                    task, 
+                    prediction_output=metrics['prediction'],
+                    save_path=viz_path,
+                    show_plot=False  # Don't display in non-interactive environments
+                )
         
         # Analyze results for this task
         successful_count = sum(1 for m in task_results['metrics'] if m.get('exact_match', False))
