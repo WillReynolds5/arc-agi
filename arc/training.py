@@ -18,8 +18,7 @@ def format_prompt(example):
     prompt = f"{system}\n\n{user}"
     
     return {
-        "prompt": prompt,
-        "completion": example["assistant"]
+        "text": f"{prompt}\n\n{example['assistant']}"
     }
 
 
@@ -60,7 +59,7 @@ def train_model(
     model_output_dir = os.path.join(output_dir, f"{os.path.basename(model_name)}_{timestamp}")
     os.makedirs(model_output_dir, exist_ok=True)
     
-    # Process dataset to create prompt and completion pairs
+    # Process dataset to create formatted examples
     processed_dataset = training_data.map(format_prompt)
     
     print(f"Prepared {len(processed_dataset)} examples for training")
@@ -94,14 +93,14 @@ def train_model(
         save_total_limit=2,  # Keep only the 2 best checkpoints
     )
     
-    # Create SFT Trainer
+    # Create SFT Trainer with updated parameters
     trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
         args=training_args,
         train_dataset=processed_dataset,
-        dataset_text_field="prompt",
         peft_config=peft_config,
+        dataset_text_field="text",  # Use the key from format_prompt output
+        processing_class=tokenizer,  # Replace deprecated 'tokenizer' parameter
     )
     
     # Start training

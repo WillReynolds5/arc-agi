@@ -212,7 +212,7 @@ def build_dataset_with_model(
 
 
 def run_iterative_training(
-    initial_model_name="google/gemma-2b",
+    initial_model_name="google/gemma-3-4b-it",
     data_path="data",
     base_output_dir="arc_iterations",
     max_iterations=5,
@@ -362,7 +362,7 @@ def run_iterative_training(
 
 def main():
     parser = argparse.ArgumentParser(description='Run iterative training loop for ARC solver')
-    parser.add_argument('--initial_model', default='google/gemma-2b', 
+    parser.add_argument('--initial_model', default='google/gemma-3-4b-it', 
                        help='Initial model to start with')
     parser.add_argument('--data_path', default='data', help='Path to ARC data')
     parser.add_argument('--output_dir', default='arc_iterations', 
