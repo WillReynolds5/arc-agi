@@ -6,10 +6,17 @@ import numpy as np
 import logging
 from typing import Dict, List, Any, Optional, Tuple
 from arc.visualization import parse_grid_from_text
+import sys
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, 
-                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Update the logging configuration
+def configure_logging(level_name=None):
+    """Configure logging with the specified level."""
+    level = getattr(logging, level_name.upper()) if level_name else logging.INFO
+    logging.basicConfig(level=level, 
+                      format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    return logging.getLogger('arc.evaluation')
+
+# Replace the existing logger setup
 logger = logging.getLogger('arc.evaluation')
 
 def intersection_over_union(y_true, y_pred, class_val):
@@ -118,6 +125,16 @@ def evaluate_solution(task, solution_text, model=None):
         task_id = task.get('id', 'unknown')
         logger.info(f"Evaluating solution for task {task_id}")
         
+        # Check if solution text is empty
+        if not solution_text:
+            logger.error(f"Empty solution text received for task {task_id}")
+            return {
+                'exact_match': False,
+                'mean_iou': 0.0,
+                'valid_solution': False,
+                'error': "Empty solution text"
+            }
+        
         # Log a preview of the solution text
         preview_len = min(500, len(solution_text))
         logger.info(f"Solution text preview: {solution_text[:preview_len]}...")
@@ -127,11 +144,16 @@ def evaluate_solution(task, solution_text, model=None):
         
         # First try without the model for extraction
         logger.info("Attempting direct grid extraction...")
-        predicted_grid = extract_grid_from_solution(solution_text)
+        predicted_grid = parse_grid_from_text(solution_text)
         
-        # If direct extraction fails, try with model-based extraction
+        # If direct parsing fails, try extraction via extract_grid_from_solution
+        if predicted_grid is None:
+            logger.info("Direct parsing failed, trying extraction function...")
+            predicted_grid = extract_grid_from_solution(solution_text)
+        
+        # If extraction fails, try with model-based extraction
         if predicted_grid is None and model is not None:
-            logger.info(f"Direct extraction failed, trying with model {model}...")
+            logger.info(f"Extraction failed, trying with model {model}...")
             predicted_grid = extract_grid_from_solution(solution_text, model=model)
         
         # Initialize metrics
@@ -172,6 +194,13 @@ def evaluate_solution(task, solution_text, model=None):
                 'accuracy': 0.0,
                 'extraction_failed': True
             })
+        
+        # Add detailed logging about the task structure
+        logger.debug(f"Task structure: {task.keys()}")
+        if 'test' in task:
+            logger.debug(f"Test samples: {len(task['test'])}")
+            if task['test']:
+                logger.debug(f"First test sample keys: {task['test'][0].keys()}")
         
         return metrics
     except Exception as e:
