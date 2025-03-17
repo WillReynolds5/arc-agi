@@ -5,7 +5,8 @@ Functions for training models on ARC data.
 import os
 import torch
 from datasets import Dataset
-from trl import SFTTrainer, SFTConfig
+from trl import SFTTrainer
+from transformers import TrainingArguments
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 
@@ -75,15 +76,15 @@ def train_model(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     
-    # Configure training arguments
-    training_args = SFTConfig(
+    # Configure training arguments using TrainingArguments instead of SFTConfig
+    training_args = TrainingArguments(
         output_dir=model_output_dir,
         num_train_epochs=num_train_epochs,
         per_device_train_batch_size=per_device_train_batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
         gradient_checkpointing=gradient_checkpointing,
         learning_rate=learning_rate,
-        max_seq_length=max_seq_length,
+        max_steps=-1,  # No limit on steps
         logging_steps=10,
         save_strategy="epoch",
         lr_scheduler_type="cosine",
@@ -91,16 +92,17 @@ def train_model(
         bf16=torch.cuda.is_available(),  # Use bfloat16 if available
         report_to="tensorboard",
         save_total_limit=2,  # Keep only the 2 best checkpoints
-        dataset_text_field="text",  # Move this parameter to SFTConfig
     )
     
-    # Create SFT Trainer with updated parameters
+    # Create SFT Trainer with the correct parameters for TRL 0.15.2
     trainer = SFTTrainer(
         model=model,
         args=training_args,
         train_dataset=processed_dataset,
         peft_config=peft_config,
-        tokenizer=tokenizer,  # Try with tokenizer instead of processing_class
+        tokenizer=tokenizer,
+        # For TRL 0.15.2, specify input text column explicitly
+        formatting_func=lambda example: example["text"],
     )
     
     # Start training
