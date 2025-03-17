@@ -9,6 +9,8 @@ from tqdm import tqdm
 from typing import Dict, List, Any, Optional
 from openai import OpenAI
 
+from arc.prompts import create_arc_solve_prompt
+
 # Sync client for non-async operations
 try:
     openrouter_client = OpenAI(
@@ -40,23 +42,38 @@ def run_model_inference(
     Returns:
         Generated text response
     """
-    from arc.prompts import create_arc_solve_prompt
-    
-    # Create system and user prompts
-    system_content = (
-        "You are an expert at solving abstract reasoning puzzles. "
-        "Given examples of input and output grids, your task is to identify the pattern "
-        "and apply it to a new input grid. First explain your reasoning step by step, "
-        "then provide the solution grid."
-    )
-    
+    # Get the user content
     user_content = create_arc_solve_prompt(task)
     
-    # Combine into a single prompt
-    prompt = f"{system_content}\n\n{user_content}"
+    # Create messages in the correct format for Gemma-3
+    messages = [
+        [
+            {
+                "role": "system",
+                "content": [{"type": "text", "text": "You are an expert at solving abstract reasoning puzzles. "
+                           "Given examples of input and output grids, your task is to identify the pattern "
+                           "and apply it to a new input grid. First explain your reasoning step by step, "
+                           "then provide the solution grid."}]
+            },
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": user_content}]
+            },
+        ],
+    ]
     
-    # Tokenize the prompt
-    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    # Apply the chat template - this is critical for Gemma-3 models
+    inputs = tokenizer.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        tokenize=True,
+        return_dict=True,
+        return_tensors="pt"
+    ).to(model.device)
+    
+    # Log input shape for debugging
+    input_len = inputs["input_ids"].shape[-1]
+    print(f"Input length: {input_len} tokens")
     
     # Generate response
     with torch.no_grad():
@@ -68,8 +85,11 @@ def run_model_inference(
             do_sample=True,
         )
     
-    # Decode the response
-    generated_text = tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
+    # Decode only the new tokens (not the input)
+    generated_text = tokenizer.decode(outputs[0][input_len:], skip_special_tokens=True)
+    
+    # Log output for debugging
+    print(f"Generated {len(generated_text)} characters")
     
     return generated_text
 
